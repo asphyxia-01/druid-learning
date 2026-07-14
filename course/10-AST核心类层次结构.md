@@ -38,12 +38,12 @@ Druid 的 AST 由三层接口构成：
 
 ```
 SQLObject (所有 AST 节点的根接口)
-    ├── SQLExpr (表达式节点)
-    │   └── SQLStatementImpl (语句节点，也实现了 SQLDbTypedObject)
-    │
-    SQLObjectImpl (抽象基类)
-    ├── SQLExprImpl (表达式基类)
-    └── SQLStatementImpl (语句基类)
+    ├── SQLExpr (表达式节点接口，extends SQLObject, Cloneable)
+    └── SQLStatement (语句节点接口，extends SQLObject, SQLDbTypedObject)
+
+SQLObjectImpl (抽象基类，implements SQLObject)
+    ├── SQLExprImpl (implements SQLExpr)
+    └── SQLStatementImpl (implements SQLStatement)
 ```
 
 ### SQLObject — 一切 AST 节点的根

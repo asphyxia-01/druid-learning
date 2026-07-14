@@ -24,7 +24,7 @@ SQL 字符串 (文本)
 
 **文件位置**: `druid/core/src/main/java/com/alibaba/druid/sql/visitor/SQLASTOutputVisitor.java`
 
-约 5500+ 行，是 Druid SQL 模块中最长的文件之一。
+约 12,500+ 行，是 Druid SQL 模块中最长的文件之一。
 
 ## 核心设计
 
@@ -35,7 +35,7 @@ public class SQLASTOutputVisitor extends SQLASTVisitorAdapter
     protected final StringBuilder appender;   // SQL 输出目标
     protected int indentCount;                // 缩进级别
     protected boolean ucase = true;           // 是否大写关键字
-    protected boolean prettyFormat = true;    // 是否美化（换行缩进）
+    // 注意: prettyFormat 不是独立字段，实际通过 VisitorFeature 控制
     protected boolean parameterized = false;  // 是否参数化
 }
 ```

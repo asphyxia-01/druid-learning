@@ -31,7 +31,7 @@ Druid 的 `builder/` 包为方式 2 提供了更友好的 API。
 **文件位置**: `druid/core/src/main/java/com/alibaba/druid/sql/builder/`
 
 ```
-SQLBuilder.java         → 统一的 Builder 接口
+SQLBuilder.java         → Builder 标记接口（空接口）
 SQLSelectBuilder.java   → SELECT 构建器
 SQLUpdateBuilder.java   → UPDATE 构建器
 SQLDeleteBuilder.java   → DELETE 构建器
@@ -49,8 +49,8 @@ SQLSelectBuilder builder = new SQLSelectBuilderImpl(DbType.mysql);
 String sql = builder
     .select("id", "name", "age")
     .from("users")
-    .where("age > 18")
-    .where("status = 'active'")
+    .whereAnd("age > 18")           // ⚠️ where() 会覆盖已有条件
+    .whereAnd("status = 'active'")  // 应使用 whereAnd() 追加条件
     .orderBy("id DESC")
     .limit(10)
     .toString();
@@ -81,7 +81,7 @@ public interface SQLSelectBuilder {
     SQLSelectBuilder limit(int rowCount, int offset);
 
     String toString();
-    SQLSelectStatement getSQLStatement();
+    SQLSelectStatement getSQLSelectStatement();
 }
 ```
 
@@ -91,7 +91,7 @@ public interface SQLSelectBuilder {
 SQLUpdateBuilder builder = new SQLUpdateBuilderImpl(DbType.mysql);
 
 String sql = builder
-    .update("users")
+    .from("users")
     .set("name = 'Bob'")
     .set("age = 25")
     .where("id = 1")
@@ -110,7 +110,7 @@ System.out.println(sql);
 SQLDeleteBuilder builder = new SQLDeleteBuilderImpl(DbType.mysql);
 
 String sql = builder
-    .deleteFrom("users")
+    .from("users")
     .where("status = 'inactive'")
     .where("created_at < '2020-01-01'")
     .toString();
@@ -166,14 +166,14 @@ public String buildDynamicQuery(UserQueryParam param) {
 
     // 根据参数动态添加条件
     if (param.getName() != null) {
-        builder.where("name LIKE '%" + param.getName() + "%'");
+        builder.whereAnd("name LIKE '%" + param.getName() + "%'");
         // ⚠️ 实际使用请用参数化查询
     }
     if (param.getMinAge() != null) {
-        builder.where("age >= " + param.getMinAge());
+        builder.whereAnd("age >= " + param.getMinAge());
     }
     if (param.getCity() != null) {
-        builder.where("city = '" + param.getCity() + "'");
+        builder.whereAnd("city = '" + param.getCity() + "'");
     }
     if (param.getSortBy() != null) {
         builder.orderBy(param.getSortBy() + " " + param.getSortOrder());

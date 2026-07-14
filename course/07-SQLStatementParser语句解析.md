@@ -58,7 +58,7 @@ public SQLStatement parseStatement() {
 
 ```java
 // SQLStatementParser.java
-public void parseStatementList(List<SQLStatement> statements, int max, List<String> expectedTypes) {
+public void parseStatementList(List<SQLStatement> statementList, int max, SQLObject parent) {
     while (true) {
         // 处理空语句（连续分号）
         if (lexer.token == Token.SEMI) {

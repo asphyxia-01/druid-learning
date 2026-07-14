@@ -74,7 +74,8 @@ String sql = "SELECT * FROM users WHERE id = 1 AND name = 'Alice'";
 // 使用 ExportParameterVisitor 提取参数
 List<Object> parameters = new ArrayList<>();
 SQLStatementParser parser = SQLParserUtils.createSQLStatementParser(sql, DbType.mysql);
-parser.parseStatementList().get(0).accept(new MySqlExportParameterVisitor(parameters));
+SQLStatement stmt = parser.parseStatementList().get(0);
+stmt.accept(new MySqlExportParameterVisitor(parameters));
 
 System.out.println(parameters);
 // [1, 'Alice']
@@ -187,9 +188,11 @@ public class SqlNormalizer {
             SQLStatementParser parser = SQLParserUtils.createSQLStatementParser(sql, dbType);
             SQLStatement stmt = parser.parseStatementList().get(0);
 
-            ExportParameterVisitor visitor = ExportParameterVisitorUtils.createExportParameterVisitor(dbType);
-            visitor.setParameters(parameters);
+            ExportParameterVisitor visitor = ExportParameterVisitorUtils.createExportParameterVisitor(new StringBuilder(), dbType);
+            visitor.setParameters(parameters);  // 替换参数列表
             stmt.accept(visitor);
+            // 或直接用方言版本: new MySqlExportParameterVisitor(parameters)
+            // stmt.accept(new MySqlExportParameterVisitor(parameters));
         } catch (Exception e) {
             // 解析失败时返回空列表
         }

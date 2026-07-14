@@ -58,8 +58,11 @@ public class Lexer {
 Lexer 的核心方法是 `nextToken()`。它通过识别**当前字符的类型**来决定如何扫描下一个 Token。
 
 ```java
-// Lexer.java:146 (简化版)
+// (简化版 — 用于理解流程，非完整源码)
 public void nextToken() {
+    startPos = pos;
+    bufPos = 0;
+
     // 跳过空白字符
     while (Character.isWhitespace(ch)) {
         ch = text.charAt(++pos);
@@ -161,7 +164,7 @@ protected void scanIdentifier() {
     long hash = FnvHash.fnv1a_64_lower(ident);
 
     // 查关键字表
-    Token tok = keywords.getToken(hash);
+    Token tok = keywords.getKeyword(hash);
     if (tok != null) {
         token = tok;  // 是关键字
     } else {
@@ -185,7 +188,7 @@ public class Keywords {
     private final long[] hashArray;  // 排序后的哈希数组
     private final Token[] tokens;    // 对应的 Token
 
-    public Token getToken(long hash) {
+    public Token getKeyword(long hash) {
         int index = Arrays.binarySearch(hashArray, hash);
         if (index >= 0) {
             return tokens[index];
@@ -232,15 +235,21 @@ public class Keywords {
 ```java
 // druid/core/src/main/java/.../mysql/parser/MySqlLexer.java
 public class MySqlLexer extends Lexer {
-    public static final Keywords DEFAULT_MYSQL_KEYWORDS;
+    static final Keywords MYSQL_KEYWORDS;
 
     static {
-        // MySQL 特有的关键字
         Map<String, Token> map = new HashMap<>();
+        map.putAll(Keywords.DEFAULT_KEYWORDS.getKeywords());
+        // 增加 MySQL 特有的关键字
         map.put("AUTO_INCREMENT", Token.AUTO_INCREMENT);
         map.put("ENGINE", Token.ENGINE);
         // ...
-        DEFAULT_MYSQL_KEYWORDS = new Keywords(map);
+        MYSQL_KEYWORDS = new Keywords(map);
+    }
+
+    @Override
+    protected Keywords loadKeywords() {
+        return MYSQL_KEYWORDS;
     }
 
     public MySqlLexer(String input) {
@@ -267,12 +276,12 @@ public class MySqlLexer extends Lexer {
 
 | 文件 | 方法 | 说明 |
 |------|------|------|
-| Lexer.java:146 | `nextToken()` | 核心方法：识别下一个 Token |
-| Lexer.java:~300 | `scanIdentifier()` | 标识符/关键字扫描 |
-| Lexer.java:~470 | `scanNumber()` | 数字字面量扫描 |
-| Lexer.java:~540 | `scanString()` | 字符串字面量扫描 |
-| Lexer.java:~630 | `scanAlias()` | 引号标识符扫描 |
-| Keywords.java | `getToken()` | 哈希匹配 |
+| Lexer.java | `nextToken()` | 核心方法：识别下一个 Token |
+| Lexer.java | `scanIdentifier()` | 标识符/关键字扫描 |
+| Lexer.java | `scanNumber()` | 数字字面量扫描 |
+| Lexer.java | `scanString()` | 字符串字面量扫描 |
+| Lexer.java | `scanAlias()` | 引号标识符扫描 |
+| Keywords.java | `getKeyword()` | 哈希匹配 |
 
 ## 延伸阅读
 

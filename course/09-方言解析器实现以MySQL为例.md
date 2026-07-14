@@ -103,28 +103,18 @@ public class MySqlExprParser extends SQLExprParser {
         this.aggregateFunctionHashCodes = AGGREGATE_FUNCTIONS_CODES;
     }
 
-    // MySQL 特有的表达式解析: @变量
+    // MySQL 特有的赋值操作 :=（在 additiveRest 中处理）
+    // MySQL 变量 @var 由基类 primaryVariant() 处理，无需覆盖
     @Override
-    protected SQLExpr parseVariant() {
-        // MySQL 变量: @var_name, @@global.var_name
-        if (lexer.token() == Token.VARIANT) {
-            String varName = lexer.stringVal();
-            lexer.nextToken();
-            return new SQLVariantRefExpr(varName);
-        }
-        return super.parseVariant();
-    }
-
-    // MySQL 特有的赋值操作 :=
-    @Override
-    public SQLExpr primaryExpr() {
-        if (lexer.token() == Token.COLON && lexer.stringVal().charAt(0) == ':') {
+    public SQLExpr additiveRest(SQLExpr expr) {
+        expr = super.additiveRest(expr);
+        if (lexer.token() == Token.COLONEQ) {
             // := 赋值
             lexer.nextToken();
-            SQLExpr value = expr();
-            return new SQLBinaryOpExpr(left, Token.COLON, value, DbType.mysql);
+            SQLExpr right = expr();
+            expr = new SQLBinaryOpExpr(expr, SQLBinaryOperator.Assignment, right, dbType);
         }
-        return super.primaryExpr();
+        return expr;
     }
 }
 ```

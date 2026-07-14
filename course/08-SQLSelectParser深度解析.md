@@ -60,28 +60,12 @@ public SQLSelect select() {
 
 ## 查询主体: query() 方法
 
-`query()` 是 SELECT 解析的核心分派方法：
+`query()` 方法承担了两项任务：创建一个 `SQLSelectQueryBlock` 并解析其所有子句，然后检查是否有 UNION 进行组合。
 
 ```java
-// SQLSelectParser.java
-protected SQLSelectQuery query(SQLSelect select, boolean parent) {
-    switch (lexer.token) {
-        case SELECT:
-            return queryBlock();     // 普通 SELECT 查询
-        case LPAREN:
-            return querySubQuery();  // 子查询 (SELECT ...)
-        default:
-            throw new ParserException("syntax error");
-    }
-}
-```
-
-### queryBlock(): 解析 SELECT 语句的每个子句
-
-```java
-// SQLSelectParser.java
-public SQLSelectQueryBlock queryBlock() {
-    SQLSelectQueryBlock queryBlock = new SQLSelectQueryBlock();
+// SQLSelectParser.java:450
+public SQLSelectQuery query(SQLObject parent, boolean acceptUnion) {
+    SQLSelectQueryBlock queryBlock = createSelectQueryBlock();
     accept(Token.SELECT);
 
     // 处理 DISTINCT
@@ -120,19 +104,22 @@ public SQLSelectQueryBlock queryBlock() {
         queryBlock.setHaving(exprParser.expr());
     }
 
-    // 6. 解析 ORDER BY (内层)
+    // 6. 解析 ORDER BY（内层 — 也支持外层）
     if (lexer.token == Token.ORDER) {
         queryBlock.setOrderBy(parseOrderBy());
     }
 
-    // 7. 解析 LIMIT (内层)
+    // 7. 解析 LIMIT（内层 — 也支持外层）
     if (lexer.token == Token.LIMIT) {
-        queryBlock.setLimit(parseLimit());
+        queryBlock.setLimit(exprParser.parseLimit());
     }
 
-    return queryBlock;
+    // 返回后检查 UNION
+    return queryRest(queryBlock, acceptUnion);
 }
 ```
+
+> 💡 Druid 没有单独的 `queryBlock()` 方法，SELECT 查询块的解析是 `query()` 方法的一部分。`query()` 方法先创建 SQLSelectQueryBlock，然后依次处理各子句。
 
 ### 解析 SELECT 列表
 
@@ -293,13 +280,13 @@ SQLSelectParser.select()
 
 SQLSelectParser 的关键设计决策：
 
-1. **分层解析**: 先解析"查询块"(queryBlock)，再处理"组合"(UNION)
+1. **分层解析**: 先解析"查询块"（query 方法内部），再处理"组合"(UNION)
 2. **懒惰委托**: WHERE/HAVING 条件完全交给 `exprParser.expr()`
 3. **内外分层**: ORDER BY 和 LIMIT 可以出现在 queryBlock 内部或外部（UNION 时在外部）
 
 ## 🔍 动手探索
 
-1. 在 `SQLSelectParser.queryBlock()` 中找到所有子句的解析顺序
+1. 在 `SQLSelectParser.query()` 方法中找到所有子句的解析顺序
 2. 找到 UNION 的解析逻辑，理解左递归的处理
 3. 查看 `parseTableSource()` 中 JOIN 的处理逻辑
 
@@ -314,7 +301,7 @@ SQLSelectParser 的关键设计决策：
 | 文件 | 方法 | 说明 |
 |------|------|------|
 | SQLSelectParser.java:55 | `select()` | SELECT 入口 |
-| SQLSelectParser.java:~80 | `queryBlock()` | 查询块解析 |
+| SQLSelectParser.java:450 | `query()` | 查询块解析（含各子句） |
 | SQLSelectParser.java:~150 | `parseSelectList()` | SELECT 列表 |
 | SQLStatementParser.java | `parseTableSource()` | FROM + JOIN |
 | SQLSelectParser.java:~200 | `parseOrderBy()` | ORDER BY |

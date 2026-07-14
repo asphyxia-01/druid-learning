@@ -89,56 +89,61 @@ protected void acceptIdentifier(Long hash) {
 }
 ```
 
-### 3. 关键字匹配
+### 3. 关键字匹配（accept）
 
 ```java
-// 接受一个关键字（消费掉）
-protected void accept(Token token) {
-    if (this.lexer.token() == token) {
-        lexer.nextToken();
-    } else {
+// SQLParser.java:913
+// 接受一个关键字：如果当前是期望的 token 就消费它，否则报错
+public void accept(Token token) {
+    if (!lexer.nextIf(token)) {     // ★ nextIf 检查并消费
+        setErrorEndPos(lexer.pos());
+        printError(token);
+    }
+}
+```
+
+关键点是 `lexer.nextIf(token)`：这个方法检查当前 Token 是否匹配，如果匹配就**自动前进到下一个 Token**，返回 true。这个"检查+消费"二合一的模式在 Parser 中大量使用，代码更简洁。
+
+```java
+// 对应的 match 方法：只检查不消费
+public void match(Token token) {
+    if (lexer.token != token) {
         throw new ParserException("syntax error, expect " + token);
     }
 }
-
-// 检查当前 Token 是否匹配
-protected boolean token(Token token) {
-    return this.lexer.token() == token;
-}
 ```
 
-### 4. 表达式解析委托
+`accept` 和 `match` 的区别：
+- `accept(Token)` — 检查 + 消费（"我要吃掉这个 Token"）
+- `match(Token)` — 只检查不消费（"我只想看看是不是这个"）
+
+### 4. 错误处理
 
 ```java
-// 解析表达式（委托给 exprParser）
-protected SQLExpr parseExpr() {
-    if (exprParser == null) {
-        exprParser = new SQLExprParser(lexer, dbType);
+// 记录最远的错误位置（辅助调试，给出更准确的错误信息）
+protected void setErrorEndPos(int errPos) {
+    if (errPos > errorEndPos) {
+        errorEndPos = errPos;
     }
-    return exprParser.expr();
 }
 
-// 解析表达式（指定优先级）
-protected SQLExpr parseExpr(int priorities) {
-    return exprParser.expr(priorities);
+// 打印详尽的错误信息（包含上下文）
+protected void printError(Token token) {
+    // 截取错误位置附近的文本片段
+    // 拼装错误信息，抛出 ParserException
 }
 ```
 
-### 5. 错误处理
+### 5. 特性配置
 
 ```java
-// 设置错误位置（辅助调试）
-protected void setErrorEndPos(int pos) {
-    // 记录出错位置
-}
-
 // 判断是否启用某个 feature
-public boolean isEnabled(SQLParserFeature feature) {
-    return SQLParserFeature.isEnabled(this.features, feature);
+public final boolean isEnabled(SQLParserFeature feature) {
+    return lexer.isEnabled(feature);
 }
 
 public void config(SQLParserFeature feature, boolean state) {
-    features = SQLParserFeature.config(features, feature, state);
+    this.lexer.config(feature, state);
 }
 ```
 
@@ -160,48 +165,52 @@ public enum SQLParserFeature {
 
 ## 完整的解析流程
 
-以解析 `SELECT * FROM users` 为例，展示 SQLParser 的工作流程：
+以解析 `SELECT * FROM users` 为例，展示从创建 Parser 到产出 AST 的工作流程：
 
 ```
-Step 1: 创建 SQLStatementParser
-  new SQLStatementParser("SELECT * FROM users", DbType.mysql)
-    → 创建 Lexer，预读第一个 Token → token = SELECT
+Step 1: new SQLStatementParser("SELECT * FROM users", DbType.mysql)
+  → new Lexer(sql, null, dbType)     创建 Lexer，pos=0
+  → lexer.nextToken()                 预读 → token=SELECT
 
-Step 2: 调用 parseStatementList()
-  → 根据 token 类型分发
-  → token = SELECT → 进入 parseSelect()
+Step 2: parser.parseStatementList()
+  → lexer.token == SELECT
+  → 调用 parseSelect()
 
-Step 3: 创建 SQLSelectParser
-  → 调用 select() 方法
-  → 解析 SELECT 子句、FROM 子句...
+Step 3: parseSelect()
+  → createSelectParser()             创建 SQLSelectParser
+  → selectParser.select()            解析 SELECT 各子句
 
 Step 4: 返回 AST
   → SQLSelectStatement
     → SQLSelect
       → SQLSelectQueryBlock
+        → selectList: [SQLAllColumnExpr]
+        → from: SQLExprTableSource(users)
 ```
 
 ## 💡 设计思想
 
 SQLParser 的设计体现了一个**分层抽象**的思路：
 
-1. **SQLParser** — 提供解析的基础能力（Lexer 访问、Token 判等、错误处理）
-2. **SQLExprParser** — 处理表达式解析（`a + b > 1`, `func(x)`）
+1. **SQLParser** — 提供解析的基础能力（Lexer 访问、Token 判等、错误处理），约 970 行
+2. **SQLExprParser** — 处理表达式解析（`a + b > 1`, `func(x)`），约 6500 行
 3. **SQLStatementParser** — 处理语句解析（SELECT/INSERT/UPDATE/DELETE）
 4. **方言子类** — 处理方言特定的语法差异
 
 每一层只关注自己职责范围内的事情，上层通过 `super` 调用和委托来复用下层能力。
 
+注意 SQLParser 本身**不包含**表达式解析方法，表达式解析是通过 `SQLExprParser` 独立完成的，`SQLStatementParser` 和 `SQLSelectParser` 内部持有 `exprParser` 引用来委托表达式解析。
+
 ## 🔍 动手探索
 
-1. 在 `SQLParser.java` 中找到所有标记为 `protected` 的方法，思考它们被哪些子类重写
-2. 查看 `isEnabled()` 方法如何使用位运算检查特性开关
+1. 在 `SQLParser.java` 中找到 `accept(Token)` 和 `match(Token)`，理解它们的区别
+2. 查看 `lexer.nextIf(token)` 的实现，理解"检查+消费"二合一的设计
 3. 找到 `SQLParserFeature` 中所有枚举值，理解每个特性的作用
 
 ## 思考题
 
-1. SQLParser 为什么要持有 `exprParser` 的引用？改成每次都创建新的 exprParser 会有什么问题？
-2. `accept(Token)` 和 `identifierEquals(String)` 有什么本质区别？什么情况下用哪个？
+1. `accept(Token)` 和 `match(Token)` 有什么本质区别？在什么场景下用哪一个？
+2. SQLParser 为什么不自己包含表达式解析方法，而是委托给 SQLExprParser？
 3. 位标记（bit flag）相比 boolean 字段有什么优势？在 Parser 的实现中这种设计带来了什么好处？
 
 ## 关键源码路径
@@ -210,8 +219,8 @@ SQLParser 的设计体现了一个**分层抽象**的思路：
 |------|------|------|
 | SQLParser.java:31 | 构造函数 | 创建 Lexer、预读 Token |
 | SQLParser.java:64 | `identifierEquals()` | 标识符匹配 |
-| SQLParser.java:85 | `accept(Token)` | 消费 Token |
-| SQLParser.java:105 | `parseExpr()` | 委托表达式解析 |
+| SQLParser.java:913 | `accept(Token)` | 消费 Token |
+| SQLParser.java:932 | `match(Token)` | 检查 Token |
 | SQLParserFeature.java | 全篇 | 特性开关定义 |
 
 ## 思考题答案
@@ -219,18 +228,18 @@ SQLParser 的设计体现了一个**分层抽象**的思路：
 <details>
 <summary>点击展开</summary>
 
-1. **SQLParser 为什么要持有 `exprParser` 的引用？改成每次都创建新的会有什么问题？**
-   - 关键在于 **Lexer 状态的共享**。Parser 和 ExprParser 共享同一个 Lexer 实例，Lexer 的 `pos`（当前位置）在它们之间流转。如果每次 `parseExpr()` 都创建新的 ExprParser，新 ExprParser 会用一个新的 Lexer 从头解析，永远取不到当前 Token。
-   - 另外，`exprParser` 可能被方言子类覆盖（如 `MySqlExprParser`），持有引用确保了多态行为。
+1. **`accept(Token)` 和 `match(Token)` 本质区别？**
+   - `accept(Token)`：检查当前 Token 是否匹配，如果匹配就**消费掉**（lexer 前进到下一个）。用在"我期望这里出现某个关键字，吃掉它继续解析"的场景。
+   - `match(Token)`：只检查当前 Token 是否匹配，**不消费**。用在"我只需要确认当前是什么"的场景。
+   - `accept` 内部调用了 `lexer.nextIf(token)` 实现检查+消费二合一。
 
-2. **`accept(Token)` 和 `identifierEquals(String)` 本质区别？**
-   - `accept(Token)` 用于匹配**关键字**（如 `accept(FROM)`），Token 是枚举常量，比较的是 `lexer.token == Token.FROM`。
-   - `identifierEquals(String)` 用于匹配**标识符**（如 `identifierEquals("ENGINE")`），比较的是 Lexer 当前标识符的哈希值。这在 DDL 解析中很常见，因为 `ENGINE` 不是关键字，只是标识符。
+2. **SQLParser 为什么不自己包含表达式解析方法？**
+   - 因为表达式解析是一个独立的关注点。SQLExprParser 约 6500 行，如果放在 SQLParser 中会使其臃肿不堪。更重要的是，不同方言需要覆盖表达式解析行为（如 MySQL 的 `@变量`），放在独立类中可以通过继承实现多态。
 
-3. **位标记（bit flag）相比 boolean 字段的优势？**
+3. **位标记相比 boolean 字段的优势？**
    - (a) **节省内存**：32 个特性只需 1 个 int（4 字节），32 个 boolean 是 32 字节。
    - (b) **原子操作**：可以用 `features |= mask`、`features &= ~mask` 一次性开关多个特性。
-   - (c) **传递方便**：一个 int 可以传给方法、存在配置里。32 个 boolean 需要 32 个参数或一个配置对象。
+   - (c) **传递方便**：一个 int 可以传给方法、存在配置里。
    - (d) **比较高效**：`(features & mask) != 0` 一次位运算就完成了检查。
 </details>
 

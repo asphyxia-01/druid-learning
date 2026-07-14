@@ -148,6 +148,17 @@ public boolean visit(SQLBinaryOpExpr x) {
         case BooleanAnd:
             return true;  // AND 需要继续遍历左右子节点
 
+        case Like: {
+            String pattern = right.toString();
+            // SQL: 'abc%' → ES: abc*
+            String esPattern = pattern
+                .replace("'", "")
+                .replace("%", "*")
+                .replace("_", "?");
+            addFilter("wildcard", left.toString(), esPattern);
+            return false;
+        }
+
         default:
             return true;
     }
@@ -197,21 +208,7 @@ public boolean visit(SQLInListExpr x) {
 
 ## 第五步：处理 LIKE
 
-```java
-@Override
-public boolean visit(SQLLikeExpr x) {
-    String pattern = x.getValue().toString();
-    // SQL: 'abc%' → ES: abc*
-    String esPattern = pattern
-        .replace("'", "")
-        .replace("%", "*")
-        .replace("_", "?");
-
-    filter.add(Map.of("wildcard",
-        Map.of(x.getColumn().toString(), esPattern)));
-    return false;
-}
-```
+Druid 中 LIKE 是用 `SQLBinaryOpExpr` + `SQLBinaryOperator.Like` 表示的（没有单独的 `SQLLikeExpr` 类）。已在第三步的 `visit(SQLBinaryOpExpr)` switch 中添加了 `Like` 分支，将 SQL 的 `%` 和 `_` 通配符映射为 ES wildcard 查询的 `*` 和 `?`。
 
 ## 第六步：处理 ORDER BY
 

@@ -36,8 +36,8 @@ public class PagerUtils {
     // 分页 SQL（生成分页查询）
     public static String limit(String sql, DbType dbType, int offset, int count);
 
-    // 还可以传入参数列表
-    public static String limit(String sql, DbType dbType, int offset, int count, List<Object> parameters);
+    // 带检查 flag 的分页
+    public static String limit(String sql, DbType dbType, int offset, int count, boolean check);
 }
 ```
 
@@ -66,11 +66,11 @@ System.out.println(mysqlPage);
 // Oracle 分页
 String oraclePage = PagerUtils.limit(sql, DbType.oracle, 0, 10);
 System.out.println(oraclePage);
-// SELECT * FROM (
-//   SELECT t.*, ROWNUM AS rn
-//   FROM (SELECT id, name FROM users WHERE age > 18 ORDER BY id DESC) t
-//   WHERE ROWNUM <= 10
-// ) WHERE rn > 0
+// SELECT XX.*, ROWNUM AS RN
+// FROM (SELECT id, name FROM users WHERE age > 18 ORDER BY id DESC) XX
+// WHERE ROWNUM <= 10
+//
+// ⚠️ offset=0 时只有一层子查询；offset>0 时才需要两层嵌套
 
 // PostgreSQL 分页
 String pgPage = PagerUtils.limit(sql, DbType.postgresql, 0, 10);
@@ -117,14 +117,15 @@ public static String count(String sql, DbType dbType) {
 query.setLimit(new SQLLimit(count, offset));
 ```
 
-对于 Oracle，需要包裹两层子查询：
+对于 Oracle，分页实现取决于 offset 是否大于 0：
 
 ```java
-// Oracle 分页
+// Oracle 分页（offset > 0 时需要两层子查询）
 // 原始: SELECT ... FROM ... WHERE ...
-// 分页: SELECT * FROM (
-//         SELECT t.*, ROWNUM AS rn FROM (原始) t WHERE ROWNUM <= offset + count
-//       ) WHERE rn > offset
+// offset>0: SELECT * FROM (
+//             SELECT t.*, ROWNUM AS rn FROM (原始) t WHERE ROWNUM <= offset + count
+//           ) WHERE rn > offset
+// offset=0: 仅一层子查询 + ROWNUM <= count 即可
 ```
 
 这展示了 Druid 在 AST 层面进行 **SQL 改写** 的能力——直接在 AST 树上插入/替换子句。

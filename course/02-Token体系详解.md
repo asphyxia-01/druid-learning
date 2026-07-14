@@ -34,9 +34,22 @@ public enum Token {
 }
 ```
 
-每个 Token 包含两个属性:
-- **name**: 枚举名称本身（如 `SELECT`）
-- **upperName**: 构造时传入的字符串（如 `"SELECT"`）
+每个 Token 只有一个属性:
+- **name**: 构造时传入的字符串（如 `SELECT("SELECT")` 中的 `"SELECT"`），有些 Token 没有这个参数（如 `EOF`, `IDENTIFIER`），此时 `name = null`
+
+看源码就能确认：
+```java
+// Token.java:409-417
+public final String name;    // ← 唯一的属性
+
+Token() {
+    this(null);              // EOF、IDENTIFIER 等没有 name
+}
+
+Token(String name) {
+    this.name = name;
+}
+```
 
 ### Token 的类型分类
 
@@ -78,30 +91,17 @@ LITERAL_HEX, LITERAL_NCHARS  -- N'xxx'
 ```java
 IDENTIFIER    -- 普通标识符（表名、列名等）
 VARIANT       -- 变量（@xxx）
-QUOTE         -- 引号标识符（`xxx` 或 "xxx"）
 HINT          -- 优化器提示
 EOF           -- 文件结束
+ERROR         -- 词法错误
+LITERAL_ALIAS -- 别名（如 t 中的别名部分）
 ```
 
-### 💡 设计亮点：Token 的值类型
+注意：反引号标识符 `` `name` `` 和双引号标识符 `"name"` 没有独立的 Token。Lexer 在处理时直接解析为 `IDENTIFIER`，去掉引号后取值。
 
-Druid 的 Token 不仅是枚举，还携带了一个 `otherValues` 列表：
+### Token 的结构很简单
 
-```java
-// Token.java 内部
-public List<String> otherValues = null;
-```
-
-某些 Token 可以有别名。例如 `TINYINT` 和 `BYTE`、`INT1` 等是同一个 Token 的不同写法。这个机制让 Druid 能灵活处理不同数据库方言的差异。
-
-### Token 的 hash 优化
-
-```java
-// Token.java 内部
-public final long nameHashCode64;
-```
-
-每个 Token 都预计算了 64 位的 FNV-1a 哈希值。这在 Lexer 中进行关键字匹配时大大提升了效率——比较哈希值比比较字符串快得多。
+Token.java 除了枚举定义，就是一个 `name` 字段和两个构造器，**没有其他属性**。哈希优化不在 Token 上，而是在 Keywords 和 Lexer 层面（后面第 4 课会讲）。
 
 ## Token 如何被使用
 
@@ -172,7 +172,7 @@ while (lexer.token() != Token.EOF) {
 输出：
 ```
 SELECT : 'SELECT' at pos 0
-IDNETIFIER : 'id' at pos 7
+IDENTIFIER : 'id' at pos 7
 COMMA : ',' at pos 9
 IDENTIFIER : 'name' at pos 11
 FROM : 'FROM' at pos 16
@@ -202,7 +202,7 @@ for (Token t : Token.values()) {
 ## 思考题
 
 1. Token 枚举为什么不直接用字符串，而要定义成枚举类型？枚举比字符串有什么优势？
-2. 为什么某些 Token（如 TINYINT）有 `otherValues`？这给方言扩展带来了什么便利？
+2. Token 枚举为什么只有 `name` 一个字段？数据类型别名（如 TINYINT 表示多种整数类型）在 Druid 中是如何处理的？
 3. 如果我要为 ES DSL 添加一个特殊的 Token（如 `MATCH`），应该怎么做？这会影响到哪些组件？
 
 ## 关键源码路径
@@ -210,7 +210,6 @@ for (Token t : Token.values()) {
 | 文件 | 内容 | 行号 |
 |------|------|------|
 | Token.java | Token 枚举定义 | 全篇 |
-| Token.java | nameHashCode64 预计算 | ~末尾 |
 | Lexer.java | nextToken() 产出 Token | ~146 |
 
 ## 思考题答案
@@ -222,10 +221,9 @@ for (Token t : Token.values()) {
    - (a) **类型安全**：枚举值在编译期就确定了，IDE 可以自动补全和检查。用字符串的话 `lexer.token == "SELECt"` 这种拼写错误要到运行时才能发现。
    - (b) **性能**：枚举比较是整数比较（`ordinal`），字符串比较是 O(n)。
    - (c) **switch 支持**：Java 的 `switch` 对枚举有专门的优化（`tableswitch`/`lookupswitch`），Parser 里大量的 `switch(lexer.token)` 就是依赖这个。
-   - (d) **额外信息挂载**：每个枚举常量可以携带 `nameHashCode64`、`otherValues` 等附加数据，字符串做不到。
 
-2. **TINYINT 的 `otherValues` 给方言扩展带来了什么便利？**
-   - MySQL 的 `TINYINT` 在 Druid 中可能对应 `BYTE`、`INT1` 等别名。通过 `otherValues` 机制，这些别名被解析时能映射到同一个 Token，而不用为每个别名创建一个独立的枚举值。这样新增一个数据库方言时，不需要修改 Token.java，只需要在方言 Keywords 里做映射。
+2. **数据类型的别名（如 TINYINT/BYTE/INT1）Druid 怎么处理的？**
+   - 这些类型名不在 Token.java 中定义。实际上 TINYINT 根本**不是 Token 枚举值**，它们是在 `SQLExprParser.parseDataType()` 方法中通过 FNV 哈希值匹配识别的。`BYTE`、`INT1` 等别名各自有不同的哈希值，但都被映射到同一个 `SQLDataType` 类型对象。这种设计的好处是新增一个数据类型别名不需要改 Token.java。
 
 3. **如果我要为 ES DSL 添加一个 `MATCH` Token，需要怎么做？**
    - 如果只是要识别 `MATCH` 关键字：不需要改 Token.java。在 Keywords 中注册 `"MATCH" → Token.IDENTIFIER` 的映射（实际上默认的 Identifier 处理就够了，`MATCH` 目前可能不在 DEFAULT_KEYWORDS 中，会被识别为普通 IDENTIFIER）。只有当 `MATCH` 需要作为一个**特殊的语法结构**（不同于普通函数调用）时才需要新 Token。

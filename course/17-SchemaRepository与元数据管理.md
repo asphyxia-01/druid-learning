@@ -43,10 +43,16 @@ SQLStatement stmt = SQLUtils.parseSingleStatement("SELECT UPPER(name) FROM users
 ```java
 // 能做语义分析，知道列的类型
 SchemaRepository repo = new SchemaRepository(DbType.mysql);
+
+// 1. 先注册表结构（console 返回 String，副作用是 Schema 被记录）
 repo.console("CREATE TABLE users (id INT, name VARCHAR(100), age INT)");
 
-SQLStatement stmt = repo.console("SELECT UPPER(name), age + 1 FROM users WHERE id = 1");
-// → 知道 name 是 VARCHAR，UPPER 合法
+// 2. 解析 SQL
+List<SQLStatement> stmts = SQLUtils.parseStatements("SELECT UPPER(name), age + 1 FROM users WHERE id = 1", DbType.mysql);
+
+// 3. 用 resolve() 注入 Schema 信息
+repo.resolve(stmts.get(0));
+// → 现在知道 name 是 VARCHAR，UPPER 合法
 // → 知道 age 是 INT，age + 1 合法
 ```
 
@@ -74,26 +80,37 @@ SQLCreateTableStatement tableStmt = schema.findTable("users").getStatement();
 ### 2. 解析 SQL 并关联 Schema
 
 ```java
-// 解析 SQL 时自动关联表信息
-List<SQLStatement> stmts = repo.console("SELECT * FROM users WHERE age > 18");
-// → 等价于 parseStatements 但关联了 Schema 信息
+// 先用 DDL 注册表结构
+repo.console("CREATE TABLE users (id BIGINT AUTO_INCREMENT, name VARCHAR(100), age INT)");
+
+// 解析 SQL
+List<SQLStatement> stmts = SQLUtils.parseStatements("SELECT * FROM users WHERE age > 18", DbType.mysql);
+
+// 用 resolve() 关联 Schema 信息（注入列类型、表来源等）
+repo.resolve(stmts.get(0));
 
 // 再解析一个关联表 JOIN 的 SQL
-List<SQLStatement> stmts2 = repo.console(
-    "SELECT u.name, o.total FROM users u JOIN orders o ON u.id = o.user_id"
-);
-```
+List<SQLStatement> stmts2 = SQLUtils.parseStatements(
+    "SELECT u.name, o.total FROM users u JOIN orders o ON u.id = o.user_id", DbType.mysql);
+repo.resolve(stmts2.get(0));
 
 ### 3. 列的类型解析
 
-当 SchemaRepository 结合 `SchemaResolveVisitor` 使用时，可以自动解析列的数据类型：
+`SchemaRepository.resolve()` 方法内部创建 `SchemaResolveVisitor` 并遍历 AST，自动解析列的数据类型：
 
 ```java
-// SchemaRepository 中集成了 SchemaResolveVisitor
-repo.setResolveVisitor(new MySqlSchemaResolveVisitor(repo));
-repo.console("SELECT id, UPPER(name) FROM users");
+// 1. 注册表结构
+repo.console("CREATE TABLE users (id INT, name VARCHAR(100), age INT)");
+
+// 2. 解析 SQL
+List<SQLStatement> stmts = SQLUtils.parseStatements("SELECT id, UPPER(name) FROM users", DbType.mysql);
+
+// 3. 用 resolve() 触发 SchemaResolveVisitor
+repo.resolve(stmts.get(0));
 
 // 此时 id 和 name 的数据类型已经通过 Schema 解析出来
+// SQLIdentifierExpr("id") → resolvedColumn = Column(users.id, INT)
+// SQLIdentifierExpr("name") → resolvedColumn = Column(users.name, VARCHAR)
 ```
 
 ## SchemaResolveVisitor
@@ -103,10 +120,10 @@ repo.console("SELECT id, UPPER(name) FROM users");
 这个 Visitor 的任务是**将 Schema 信息"注入"到 AST 节点中**：
 
 ```java
-public class SchemaResolveVisitor extends SQLASTVisitorAdapter {
-    // 遇到标识符时，尝试解析其数据类型
-    @Override
-    public boolean visit(SQLIdentifierExpr x) {
+// SchemaResolveVisitor 是一个接口，继承 SQLASTVisitor
+// 具体实现由 SchemaResolveVisitorFactory 中的内部类提供
+// 这是 MySQL 版本 MySqlResolveVisitor 的大致逻辑：
+public boolean visit(SQLIdentifierExpr x) {
         // 从 Schema 中查找对应的列定义
         SchemaObject table = repository.findTable(x.getParent());
         if (table != null) {
@@ -133,7 +150,8 @@ SQLDataType dataType = expr.computeDataType();
 // → age + 1 的结果类型是 BIGINT
 
 // 在 SchemaRepository 的辅助下，类型推断会更准确
-repo.console("SELECT age + 1 FROM users");
+List<SQLStatement> stmts = SQLUtils.parseStatements("SELECT age + 1 FROM users", DbType.mysql);
+repo.resolve(stmts.get(0));
 // 因为知道 age 是 INT，所以 age + 1 的结果类型也能确定
 ```
 
@@ -178,7 +196,10 @@ public class SqlAuditor {
 
     public AuditResult audit(String sql) {
         try {
-            List<SQLStatement> stmts = repository.console(sql);
+            // 解析 SQL
+            List<SQLStatement> stmts = SQLUtils.parseStatements(sql, repository.getDbType());
+            // 用 SchemaRepository 做语义分析
+            repository.resolve(stmts.get(0));
             // 用 SchemaStatVisitor 分析
             SchemaStatVisitor visitor = new SchemaStatVisitor(repository);
             stmts.get(0).accept(visitor);
@@ -260,7 +281,7 @@ public class EsSchemaManager {
 
 ## 思考题
 
-1. SchemaRepository 中 `console()` 方法返回的是 `List<SQLStatement>`，它和 `SQLUtils.parseStatements()` 返回的结果有什么不同？
+1. SchemaRepository 中 `console("CREATE TABLE ...")` 的用途是什么？它返回什么类型？如果要解析 SQL 并关联 Schema，需要调用什么方法？
 2. `SchemaResolveVisitor` 在解析列类型时，如何处理别名（如 `u.id` 中的 `u`）？
 3. 如果你需要在 SQL-to-ES DSL 中支持 ES 的 `nested` 类型（对应 SQL 的 JOIN），你需要如何扩展 SchemaRepository？
 
@@ -280,9 +301,11 @@ public class EsSchemaManager {
 <details>
 <summary>点击展开</summary>
 
-1. **`console()` 和 `SQLUtils.parseStatements()` 的返回结果有什么不同？**
-   - `console()` 返回的 `SQLStatement` 经过了 **SchemaResolveVisitor** 的处理。AST 中的 `SQLIdentifierExpr` 节点被注入了 resolvedColumn 和 resolvedTableSource 信息。所以 `console()` 返回的 AST 不仅知道"有个标识符叫 id"，还知道"id 是 users 表的 INT 类型列"。
-   - 而 `SQLUtils.parseStatements()` 只做语法解析，不做语义解析。
+1. **`console()` 的用途和返回值？Schema 关联的正确方式？**
+   - `console(String input)` 接收 SQL 字符串，在内部解析并处理，**返回 String**（或 "\n"）。主要是用来注册表结构（DDL）的：传入 `CREATE TABLE` 语句，SchemaRepository 解析后记录表结构。
+   - 要解析 SQL 并关联 Schema，正确的做法是：
+     - `SQLUtils.parseStatements(sql, dbType)` 解析 → `List<SQLStatement>`
+     - `repo.resolve(stmt)` 触发 SchemaResolveVisitor 注入类型信息
 
 2. **SchemaResolveVisitor 如何通过别名解析列类型？**
    - 维护一个 `aliasMap`：遇到 `FROM users u` 时记录 `u → users`；遇到 `JOIN orders o ON ...` 时记录 `o → orders`。

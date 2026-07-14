@@ -19,7 +19,7 @@ SQLUtils 是 Druid SQL 模块的**统一入口**。你不需要直接操作 Lexe
 
 **文件位置**: `druid/core/src/main/java/com/alibaba/druid/sql/SQLUtils.java`
 
-这是一个约 1200 行的工具类，包含了 SQL 处理的各种静态方法。
+这是一个约 2600 行的工具类，包含了 SQL 处理的各种静态方法。
 
 ## API 分类速览
 
@@ -28,7 +28,7 @@ SQLUtils 是 Druid SQL 模块的**统一入口**。你不需要直接操作 Lexe
 | **格式化** | `format()`, `formatMySql()`, `formatOracle()` | SQL 美化 |
 | **解析** | `parseStatements()`, `parseSingleStatement()`, `toSQLExpr()` | SQL → AST |
 | **输出** | `toSQLString()`, `toMySqlString()`, `toOracleString()` | AST → SQL |
-| **条件操作** | `addCondition()`, `removeCondition()` | 动态修改 WHERE |
+| **条件操作** | `addCondition()` | 动态添加 WHERE 条件 |
 | **函数操作** | `acceptFunction()` | 查找/处理函数调用 |
 | **工具方法** | `normalize()`, `toLowerCase()`, `toUpperCase()` | 字符串处理 |
 
@@ -177,9 +177,9 @@ SQLUtils.toOracleString(stmt);
 SQLUtils.toPGString(stmt);
 ```
 
-## 4. 条件操作 (addCondition / removeCondition)
+## 4. 条件操作 (addCondition)
 
-动态修改 SQL 的 WHERE 条件。
+动态向 SQL 的 WHERE 条件添加额外条件。
 
 ```java
 String sql = "SELECT * FROM t WHERE id = 1";
@@ -187,13 +187,9 @@ String sql = "SELECT * FROM t WHERE id = 1";
 // 添加条件 (AND)
 String result = SQLUtils.addCondition(sql, "name = 'abc'", DbType.mysql);
 // SELECT * FROM t WHERE id = 1 AND name = 'abc'
-
-// 移除条件
-String result2 = SQLUtils.removeCondition(sql, "id", DbType.mysql);
-// SELECT * FROM t
 ```
 
-⚠️ 这些方法**内部也是解析→修改AST→输出的流程**。
+⚠️ 这个方法**内部也是解析→修改AST→输出的流程**。
 
 ## 5. 函数查找 (acceptFunction)
 
@@ -257,8 +253,8 @@ public class SqlToDslDemo {
 | SQLUtils.java | `format()` | ~385 |
 | SQLUtils.java | `parseStatements()` | ~680 |
 | SQLUtils.java | `toSQLString()` | ~119 |
-| SQLUtils.java | `addCondition()` | ~520 |
-| SQLUtils.java | `createOutputVisitor()` | ~1156 |
+| SQLUtils.java | `addCondition()` | ~803 |
+| SQLUtils.java | `createOutputVisitor()` | ~517 |
 
 ## 思考题答案
 
