@@ -136,6 +136,79 @@ public class SQLASTVisitorAdapter implements SQLASTVisitor {
 
 **永远继承 SQLASTVisitorAdapter**，而不是直接实现 SQLASTVisitor。这样你只需要覆盖你关心的方法。
 
+## 扩展：visitor/functions 包 — 表达式求值的插件体系
+
+在 Visitor 体系下，还有一个小而精的扩展点：**`visitor/functions/`** 包。
+
+### 它解决了什么问题？
+
+当 Druid 需要在 AST 层面**计算表达式的值**时（例如 SQL 防火墙判断参数化结果、SQL 模拟执行），它需要知道 `NOW()` 返回当前时间、`LENGTH('abc')` 返回 3。但几百个 SQL 函数的求值逻辑不能全塞在 Visitor 里，所以设计了一个微型的"函数插件系统"。
+
+### 架构
+
+```
+SQLEvalVisitor (接口)
+    ↓ 实现
+SQLEvalVisitorImpl (遍历 AST，遇到函数调用时查表)
+    ↓ 查找
+SQLEvalVisitorUtils (全局函数注册表: Map<String, Function>)
+    ↓ 调用
+visitor/functions/  (各个函数的独立实现)
+├── Function.java          ← 函数接口
+├── Now.java               ← NOW() → new Date()
+├── Length.java            ← LENGTH(s) → s.length()
+├── Substring.java         ← SUBSTR(s,1,3)
+├── Concat.java            ← CONCAT(a,b)
+└── ... (30+ 个函数)
+```
+
+### 核心代码
+
+```java
+// visitor/functions/Function.java:21 — 就 1 个方法
+public interface Function {
+    Object eval(SQLEvalVisitor visitor, SQLMethodInvokeExpr x);
+}
+
+// SQLEvalVisitorUtils.java:48 — 全局注册表
+private static Map<String, Function> functions = new HashMap<>();
+static {
+    functions.put("now", Now.instance);        // 单例注册
+    functions.put("length", Length.instance);
+    functions.put("substr", Substring.instance);
+    functions.put("concat", Concat.instance);
+    // ...
+}
+
+// Now.java:23 — 每个函数一个独立类
+public class Now implements Function {
+    public static final Now instance = new Now();
+    public Object eval(SQLEvalVisitor visitor, SQLMethodInvokeExpr x) {
+        return new Date();  // NOW() 求值就是返回当前时间
+    }
+}
+```
+
+### 调用链路
+
+```
+AST 中有 SQLMethodInvokeExpr("NOW")
+  → SQLEvalVisitorImpl.visit(SQLMethodInvokeExpr x)
+    → SQLEvalVisitorUtils.visit(visitor, x)
+      → functions.get("now")
+        → Now.instance.eval(visitor, x)
+          → return new Date()
+```
+
+### 💡 设计模式
+
+这是**策略模式 + 注册表模式**的组合：
+- **策略模式**：每个函数一个类，各自实现 `eval` 方法
+- **注册表模式**：`Map<String, Function>` 统一管理，函数名做 key
+- **单例模式**：每个 Function 实现类用 `instance` 静态字段
+
+如果你想添加新函数的求值支持，只需加一个类 + 一行注册，**不需要改任何 existing 代码**。
+
 ## 编写自定义 Visitor
 
 ### 示例 1：查找所有表名和列名

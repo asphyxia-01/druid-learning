@@ -270,6 +270,90 @@ META-INF/druid/parser/{dbType}/
 
 详见 `SQLDialect.java:85` 的 `create()` 方法。
 
+## 方言的 6 层扩展点总结
+
+Druid 为每种方言提供了 **6 个扩展点**，形成一个完整的扩展链：
+
+```
+                    SQLParserUtils (工厂：根据 DbType 选择实现)
+                         ↓
+┌─────────────────────────────────────────────────────┐
+│  扩展点 1: Lexer                                    │
+│  → 特有关键字 (ENGINE, CHARSET)                     │
+│  → 特有引号字符 (`)                                 │
+│  文件: mysql/parser/MySqlLexer.java                  │
+├─────────────────────────────────────────────────────┤
+│  扩展点 2: ExprParser                               │
+│  → 特有表达式 (@变量, := 赋值)                      │
+│  文件: mysql/parser/MySqlExprParser.java             │
+├─────────────────────────────────────────────────────┤
+│  扩展点 3: StatementParser                          │
+│  → 特有语句 (SHOW, REPLACE, EXPLAIN)                │
+│  文件: mysql/parser/MySqlStatementParser.java        │
+├─────────────────────────────────────────────────────┤
+│  扩展点 4: AST                                      │
+│  → 特有问题句节点 (MySqlInsertStatement)            │
+│  文件: mysql/ast/statement/MySql*.java              │
+├─────────────────────────────────────────────────────┤
+│  扩展点 5: Visitor                                  │
+│  → 特有输出格式 (MySqlOutputVisitor)                │
+│  → 特有统计逻辑 (MySqlSchemaStatVisitor)            │
+│  文件: mysql/visitor/MySql*.java                    │
+├─────────────────────────────────────────────────────┤
+│  扩展点 6: 级联创建                                 │
+│  → StatementParser 持有 ExprParser                  │
+│  → ExprParser 持有 Lexer                            │
+│  → new MySqlStatementParser(sql) 自动完成级联       │
+└─────────────────────────────────────────────────────┘
+```
+
+### 协作机制的核心
+
+每个扩展点的子类都只**覆盖与基类不同的方法**，90% 的逻辑直接继承：
+
+```java
+// ① MySqlStatementParser 构造函数自动级联
+public MySqlStatementParser(String sql) {
+    super(new MySqlExprParser(sql));  // ← 自动创建 ExprParser
+    // new MySqlExprParser(sql)
+    //   → super(new MySqlLexer(sql))  // ← 自动创建 Lexer
+}
+
+// ② 只覆盖 MySQL 特有的语句
+public SQLStatement parseStatement() {
+    switch (lexer.token) {
+        case SHOW: return parseShow();     // MySQL 特有
+        default:   return super.parseStatement();  // 90% 走基类
+    }
+}
+
+// ③ 工厂根据 DbType 选择
+// SQLParserUtils.createSQLStatementParser(sql, DbType.mysql)
+//   → new MySqlStatementParser(sql)
+```
+
+### 完整调用示范
+
+调用 `SQLUtils.format("SELECT * FROM users LIMIT 10", DbType.mysql)` 的完整链路：
+
+```
+SQLUtils.format()
+  → SQLParserUtils.createSQLStatementParser(sql, DbType.mysql)
+    → new MySqlStatementParser(sql)
+      → new MySqlExprParser(sql)
+        → new MySqlLexer(sql)              ← MySQL 关键字、` 引号
+  → parser.parseStatementList()
+    → MySqlStatementParser.parseStatement()
+      → lexer.token == SELECT
+        → createSelectParser()
+          → new MySqlSelectParser(...)     ← MySQL SELECT 解析
+  → SQLUtils.toSQLString()
+    → createOutputVisitor(out, DbType.mysql)
+      → new MySqlOutputVisitor(out)        ← MySQL SQL 输出
+    → stmt.accept(visitor)
+      → visit(SQLLimit) → "LIMIT 10"      ← MySQL 风格的 LIMIT 格式
+```
+
 ## 💡 对你（SQL to ES DSL）的启发
 
 如果想用 Druid 实现 SQL to ES DSL，你有两种路径：
