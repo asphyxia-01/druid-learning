@@ -320,6 +320,26 @@ SQLSelectParser 的关键设计决策：
 | SQLSelectParser.java:~200 | `parseOrderBy()` | ORDER BY |
 | SQLSelectParser.java:~250 | `query()` UNION | UNION 处理 |
 
+## 思考题答案
+
+<details>
+<summary>点击展开</summary>
+
+1. **为什么 WHERE 和 HAVING 的解析完全委托给 `exprParser.expr()`？**
+   - WHERE 和 HAVING 的条件本质上就是**布尔表达式**：`age > 18 AND status = 'active'`。这和 `a + b * c` 在解析逻辑上没有本质区别——都是操作符、操作数、优先级的问题。
+   - 区别在于语义层面（WHERE 是行级过滤，HAVING 是分组后过滤），但这不影响解析。语义检查可以在后续的 Visitor 或 SchemaRepository 阶段完成。
+
+2. **UNION 解析中为什么递归调用 `query()`？**
+   - 因为 UNION 可以链式组合：`SELECT a UNION SELECT b UNION SELECT c`。
+   - 第一次 UNION：left=SELECT a, right=SELECT b
+   - 第二次 UNION：left=(SELECT a UNION SELECT b), right=SELECT c
+   - 每次遇到 UNION 时，把当前 query 作为 left，递归解析下一个 query 作为 right，然后把 UNION 整体作为新的 left。
+   - 这形成了右递归：`Union(Union(SELECT a, SELECT b), SELECT c)`。
+
+3. **你的 SQL to ES DSL，会复用 SQLSelectParser 还是自己实现简化版？**
+   - **复用 SQLSelectParser**。原因：SQL 的完整 SELECT 语法（子查询、JOIN、UNION、CTE）写一个简化版 Parser 也要处理同样多的边界情况。Druid 已经把这些都处理好了，你只需要在生成的 AST 上做 Visitor 翻译。唯一需要自己实现的是那些 ES DSL 特有但 SQL 不直接表达的概念（如 `match_phrase`、`nested` 查询），这些不需要改 Parser，在 Visitor 里做映射就行。
+</details>
+
 ## 下一课预告
 
 **第 9 课：方言解析器实现（以 MySQL 为例）** — 我们将深入 MySQL 方言的解析器，看看 Druid 如何通过继承和扩展来支持不同数据库的特有语法。这为你将来扩展自己的"ES DSL 方言"提供了直接的参考。

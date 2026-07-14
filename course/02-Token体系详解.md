@@ -213,6 +213,24 @@ for (Token t : Token.values()) {
 | Token.java | nameHashCode64 预计算 | ~末尾 |
 | Lexer.java | nextToken() 产出 Token | ~146 |
 
+## 思考题答案
+
+<details>
+<summary>点击展开</summary>
+
+1. **Token 枚举为什么要定义成枚举类型，而不是直接用字符串？**
+   - (a) **类型安全**：枚举值在编译期就确定了，IDE 可以自动补全和检查。用字符串的话 `lexer.token == "SELECt"` 这种拼写错误要到运行时才能发现。
+   - (b) **性能**：枚举比较是整数比较（`ordinal`），字符串比较是 O(n)。
+   - (c) **switch 支持**：Java 的 `switch` 对枚举有专门的优化（`tableswitch`/`lookupswitch`），Parser 里大量的 `switch(lexer.token)` 就是依赖这个。
+   - (d) **额外信息挂载**：每个枚举常量可以携带 `nameHashCode64`、`otherValues` 等附加数据，字符串做不到。
+
+2. **TINYINT 的 `otherValues` 给方言扩展带来了什么便利？**
+   - MySQL 的 `TINYINT` 在 Druid 中可能对应 `BYTE`、`INT1` 等别名。通过 `otherValues` 机制，这些别名被解析时能映射到同一个 Token，而不用为每个别名创建一个独立的枚举值。这样新增一个数据库方言时，不需要修改 Token.java，只需要在方言 Keywords 里做映射。
+
+3. **如果我要为 ES DSL 添加一个 `MATCH` Token，需要怎么做？**
+   - 如果只是要识别 `MATCH` 关键字：不需要改 Token.java。在 Keywords 中注册 `"MATCH" → Token.IDENTIFIER` 的映射（实际上默认的 Identifier 处理就够了，`MATCH` 目前可能不在 DEFAULT_KEYWORDS 中，会被识别为普通 IDENTIFIER）。只有当 `MATCH` 需要作为一个**特殊的语法结构**（不同于普通函数调用）时才需要新 Token。
+</details>
+
 ## 下一课预告
 
 **第 3 课：Lexer 词法分析器深度解析** — 我们将深入 Lexer 的内部，看看它是如何将原始的 SQL 字符流转换为 Token 序列的。你会学到 Lexer 的状态管理、字符扫描算法、关键字匹配、哈希优化等核心技术。

@@ -313,6 +313,28 @@ SQLExpr expr = SQLUtils.toSQLExpr("a + b * c > 10", DbType.mysql);
 | SQLExprParser.java:~350 | `parseIdentifier()` | 标识符/函数调用解析 |
 | SQLExprParser.java:~500 | `getPriority()` | 运算符优先级定义 |
 
+## 思考题答案
+
+<details>
+<summary>点击展开</summary>
+
+1. **运算符优先级的数值是如何设计的？**
+   - 数值越大优先级越高。比如 `*` 的优先级 40 > `+` 的优先级 30，所以 `a + b * c` 先算 `b * c`。
+   - 设计上不同运算符之间留了数值间距（10 的倍数），方便未来在中间插入新的运算符。
+   - 查看 `getPriority()` 方法可以看到完整的优先级表：`OR=10, AND=20, 比较运算=30, 加减=30, 乘除=40, 一元运算=60` 等。
+
+2. **`parseIdentifier()` 中函数调用和列引用怎么区分？**
+   - 关键在**下一个 Token**：如果标识符后面跟着 `LPAREN`（左括号），就是函数调用；如果跟着 `DOT` 就是限定列名；否则是普通标识符。
+   - `COUNT(*)` → `COUNT` 后是 `LPAREN` → 判断为聚合函数，返回 `SQLAggregateExpr`
+   - `NOW()` → `NOW` 后是 `LPAREN` → 判断为普通函数，返回 `SQLMethodInvokeExpr`
+   - `t.id` → `t` 后是 `DOT` → 判断为限定列名，返回 `SQLPropertyExpr`
+   - `name` → `name` 后是 `COMMA` → 普通标识符，返回 `SQLIdentifierExpr`
+
+3. **如果要让 Druid 支持 ES 的 `match(field, value)` 函数，需要改什么？**
+   - 最简方案：**什么都不用改**。`match(field, value)` 会和 `SUBSTR(x, 1, 3)` 一样被 `parseIdentifier()` 解析为 `SQLMethodInvokeExpr`，函数名是 "match"，参数列表是 [field, value]。在你的自定义 Visitor 中检测 `methodName.equals("match")` 然后输出 ES 的 match query 即可。
+   - 如果要把 `match` 识别为特殊关键字：在 MySQL Keywords 里加 `"MATCH" → Token.MATCH`，在 `MySqlExprParser` 里加 `case MATCH: return parseMatchFunction()`。
+</details>
+
 ## 下一课预告
 
 **第 7 课：SQLStatementParser 语句解析** — 表达式解析是"零件"，语句解析就是"组装"。SQLStatementParser 负责将 Token 序列解析为完整的 SQL 语句 AST，包括 SELECT、INSERT、UPDATE、DELETE 等。我们将剖析它的分发机制和解析流程。

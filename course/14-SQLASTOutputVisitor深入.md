@@ -326,6 +326,24 @@ protected void printName(String name) {
 | MySqlOutputVisitor.java | `visit(SQLLimit)` | MySQL LIMIT 格式化 |
 | MySqlOutputVisitor.java | `visit(MySqlInsertStatement)` | MySQL INSERT 格式化 |
 
+## 思考题答案
+
+<details>
+<summary>点击展开</summary>
+
+1. **为什么 `visit(SQLIdentifierExpr)` 要返回 `false`？**
+   - `SQLIdentifierExpr` 只有一个标识符名称（如 `id`），它没有子节点。返回 `false` 告诉 Visitor "这个节点不需要再深入了"，避免了无意义的递归。如果返回 `true`，Visitor 会尝试去遍历 `SQLIdentifierExpr` 的子节点，但 `SQLIdentifierExpr` 没有覆盖 `accept0` 的额外子节点访问逻辑，所以实际上什么也不会发生，只是浪费了一次方法调用。
+
+2. **`prettyFormat` 和 `parameterized` 可以同时开启吗？**
+   - 可以。两者控制不同的输出维度：`prettyFormat` 控制是否换行缩进（排版），`parameterized` 控制字面量是否输出为 `?`（内容）。同时开启的效果是：SQL 被美化排版了，但具体值被替换为 `?`。这在 SQL 监控系统中很常见——既要展示格式清晰的 SQL 模板，又要隐藏具体的参数值。
+
+3. **SQL-to-ES DSL 应该继承 `SQLASTOutputVisitor` 还是自己写新的 Visitor？**
+   - 自己写新的 Visitor（继承 `SQLASTVisitorAdapter`）。因为：
+     - 输出格式完全不同：SQLASTOutputVisitor 输出 SQL 文本，ES DSL 需要输出 JSON。
+     - 继承会带来大量 SQL 特有的格式化逻辑（println、indent、case 转换），这些在输出 JSON 时用不上。
+     - `SQLASTOutputVisitor` 约 5500 行，继承它反而增加了复杂度。
+</details>
+
 ## 下一课预告
 
 **第 15 课：SchemaStatVisitor 与 SQL 分析** — SchemaStatVisitor 是 Druid 中另一个非常重要的 Visitor，它可以自动遍历 AST 并收集 SQL 语句涉及的表、列、条件、关联关系等信息。这对 SQL 审核、防火墙、ES DSL 转换等场景都非常有用。

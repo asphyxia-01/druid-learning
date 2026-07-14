@@ -260,6 +260,23 @@ public class SqlToDslDemo {
 | SQLUtils.java | `addCondition()` | ~520 |
 | SQLUtils.java | `createOutputVisitor()` | ~1156 |
 
+## 思考题答案
+
+<details>
+<summary>点击展开</summary>
+
+1. **`SQLUtils.format()` 和 `SQLUtils.toSQLString()` 有什么区别？**
+   - `format()` 内部做了"解析 → AST → 输出"完整流程，入参是 SQL 字符串。
+   - `toSQLString()` 只做"AST → 输出"，入参是已解析好的 SQLObject。
+   - 所以 `format()` 等价于 `toSQLString(parseStatements(sql, dbType), dbType)`。
+
+2. **如果我要实现 SQL to ES DSL，应该从哪个 API 入手？**
+   - 从 `parseStatements()` 入手。先把 SQL 解析成 AST，然后写一个自定义 Visitor（继承 `SQLASTVisitorAdapter`）遍历 AST 并输出 ES JSON。核心工作不在解析（Druid 帮你做了），而在 Visitor 的 `visit(SQLBinaryOpExpr)` 等方法的实现。
+
+3. **阅读 `toSQLString()` 的源码，理解它是如何创建 Visitor 的。**
+   - `SQLUtils.java:119` 的 `toSQLString()` → `createOutputVisitor(out, dbType)` → 根据 `DbType` 返回对应方言的 `SQLASTOutputVisitor`（MySQL 返回 `MySqlOutputVisitor`）。关键行：`sqlObject.accept(visitor)`，这里驱动了整个 AST 遍历。
+</details>
+
 ## 下一课预告
 
 **第 2 课：Token 体系详解** — 我们将深入 Lexer 的世界，看看 SQL 字符串是如何被拆解成一个个 Token 的。你会学到 Token 枚举的定义、Token 的类型体系，以及 Druid 是如何高效管理这些 Token 的。

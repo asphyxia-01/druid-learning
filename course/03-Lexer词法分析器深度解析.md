@@ -279,6 +279,26 @@ public class MySqlLexer extends Lexer {
 - **FNV 哈希**: https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
 - **手写 Lexer vs 生成器**: 手写 Lexer 的优势在于灵活性和性能可控
 
+## 思考题答案
+
+<details>
+<summary>点击展开</summary>
+
+1. **Druid 为什么不使用 ANTLR/JavaCC，而是手写 Lexer？**
+   - (a) **方言差异极细**：30 种方言，每个方言可能有细微的字符处理差异。手写 Lexer 可以在 `nextToken()` 的 `switch(ch)` 中精确控制每一个字符的处理逻辑。
+   - (b) **性能要求高**：Druid 被用在 SQL 防火墙、慢 SQL 采集等场景，需要高吞吐解析。手写递归下降解析器通常比生成的解析器快。
+   - (c) **无需文法文件**：ANTLR 的 .g4 文件和代码生成增加了构建步骤。Druid 的定位是一个库，不希望引入额外的构建依赖。
+   - (d) **增量解析能力**：Druid 的 Lexer 支持 save point、mark/reset 等操作，这在手写实现中更容易控制。
+
+2. **`scanIdentifier()` 中为什么要同时计算 `hash` 和 `hashLCase`？**
+   - `hash`（原始哈希）用于匹配大小写敏感的关键字。
+   - `hashLCase`（小写哈希）用于匹配不区分大小写的关键字（SQL 关键字默认不区分大小写，`select` 和 `SELECT` 应该匹配同一个 Token）。
+   - 两者配合：`hashLCase` 查关键字表，`hash` 做其他用途（如函数名识别）。
+
+3. **"ES 字段匹配器"（`field:value`）要在哪一层处理？**
+   - **在 Parser 层处理，而不是 Lexer 层**。因为 `field:value` 涉及语义关联（知道 field 是字段名，value 是值），这不是词法分析器该管的事。词法分析器只需要把 `:` 识别为 COLON Token，Parser 在看到 `IDENTIFIER COLON ...` 的模式时再特殊处理。
+</details>
+
 ## 下一课预告
 
 **第 4 课：关键字管理与性能优化** — 我们将深入 Keywords 和 SymbolTable 的内部，了解 Druid 如何通过哈希表和符号表技术来优化词法分析的性能。

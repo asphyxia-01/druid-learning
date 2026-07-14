@@ -469,3 +469,26 @@ public class AdvancedEsDslConverter {
 ---
 
 **课程完结，祝你 SQL-to-ES DSL 项目顺利！**
+
+## 思考题答案
+
+<details>
+<summary>点击展开</summary>
+
+本课是实战课，没有预设思考题。不过在实现你的 SQL-to-ES DSL 转换器时，有几个关键问题值得思考：
+
+1. **如何选择转换的入口点？**
+   - 优先从 WHERE 条件开始实现。因为 ES 查询中最核心的就是 `query` 部分，而 SQL 的 WHERE 子句和 ES 的 bool/term/range 查询有直接的映射关系。SELECT 列表（`_source`）、ORDER BY（`sort`）、LIMIT（`size`）的映射相对简单。
+
+2. **如何处理不支持的 SQL 语法？**
+   - 提供清晰的错误提示。在 Visitor 中遇到不支持的节点类型时，抛出 `UnsupportedOperationException("暂不支持子查询: " + x.getClass().getSimpleName())`。这比静默忽略要好得多。
+
+3. **如何验证转换结果的正确性？**
+   - (a) 构造 SQL，执行转换，人工检查 ES DSL 是否正确。
+   - (b) 把生成的 ES DSL 发给 Elasticsearch 的 `_validate/query` API 验证。
+   - (c) 写单元测试：SQL 输入 → 预期 ES DSL JSON 输出。
+</details>
+
+---
+
+**课程完结，祝你 SQL-to-ES DSL 项目顺利！**

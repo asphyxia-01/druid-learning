@@ -401,6 +401,25 @@ String esDsl = visitor.getResult();
 | mysql/visitor/MySqlOutputVisitor.java | MySQL 输出访问者 |
 | SQLParserUtils.java | 方言工厂方法 |
 
+## 思考题答案
+
+<details>
+<summary>点击展开</summary>
+
+1. **MySqlLexer 中的 `quoteChar = '` ` ` 对 Lexer 的扫描逻辑有什么影响？**
+   - Lexer 在 `scanIdentifier()` 中遇到 `` ` `` 时，会进入**别名扫描模式**，将反引号内的内容作为标识符，而不是当作普通字符。SQL Server 用 `[`，Oracle 用 `"`，这些都会影响 Lexer 在 `nextToken()` 中 `switch(ch)` 的分支选择。
+
+2. **为什么 `MySqlStatementParser` 覆盖 `parseStatement()` 而不是只覆盖个别方法？**
+   - 因为 MySQL 有大量特有的**语句类型**（SHOW、REPLACE、EXPLAIN、DESCRIBE 等），这些在通用 `parseStatement()` 的 switch 中没有对应分支。覆盖 `parseStatement()` 可以在 switch 开头插入 MySQL 特有分支，剩下的 `default` 委托给 `super.parseStatement()`。这是 Template Method 模式的典型用法。
+
+3. **如果要添加一个新的数据库方言（如 "esdsl"），需要在 SQLParserUtils 中做哪些修改？**
+   - (a) 在 `createSQLStatementParser()` 的 switch 中加 `case esdsl: return new EsDslStatementParser(sql);`
+   - (b) 在 `createExprParser()` 的 switch 中加 `case esdsl: return new EsDslExprParser(sql);`
+   - (c) 在 `createOutputVisitor()` 的 switch 中加 `case esdsl: return new EsDslOutputVisitor(out);`
+   - (d) 在 `createSchemaStatVisitor()` 的 switch 中加对应逻辑
+   - (e) 确保 `DbType` 枚举中有 `esdsl` 值
+</details>
+
 ## 下一课预告
 
 **第 10 课：AST 核心类层次结构** — 从 Parser 回到 AST。我们将系统学习 Druid AST 的类层次设计，包括 SQLObject、SQLExpr、SQLStatement 三大接口和它们的实现类体系。

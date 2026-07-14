@@ -290,6 +290,26 @@ public class EsSqlTemplate {
 | SQLASTParameterizedVisitor.java | 通用参数化 Visitor |
 | template/SQLSelectQueryTemplate.java | SQL 模板 |
 
+## 思考题答案
+
+<details>
+<summary>点击展开</summary>
+
+1. **SQL 参数化和 PreparedStatement 的参数占位符有什么区别？**
+   - **Druid 的参数化**：是**输出时**的格式化选项。把字面量统一替换为 `?`，用于 SQL 归并、统计、防火墙。参数化后的 SQL 不可执行。
+   - **PreparedStatement 的 `?`**：是 **JDBC 协议**中的参数占位符。由数据库驱动处理，用于预编译和防 SQL 注入。带 `?` 的 SQL 可以执行（配合 setXXX 方法）。
+   - 两者只是在"表现形式"上相同（都用 `?`），目的完全不同。
+
+2. **`IN (1, 2, 3)` 在参数化时，每个值是一个参数还是一个整体？**
+   - Druid 的 `ExportParameterVisitor` 中，`IN (1, 2, 3)` 的每个值**各自是一个参数**，参数列表为 `[1, 2, 3]`。对应的参数化 SQL 为 `IN (?, ?, ?)`。
+   - 但如果用 `SQLASTOutputVisitor` 的 `parameterized` 模式，每个值会被输出为 `?`，即 `IN (?, ?, ?)`。和 ExportParameterVisitor 的行为一致。
+
+3. **SQL-to-ES DSL 中参数化能带来什么好处？**
+   - (a) **查询模板化**：预编译 SQL 模板 → 预生成 ES DSL 模板（JSON 骨架），运行时只替换参数值。
+   - (b) **缓存命中**：相同的查询结构只构建一次 DSL，减少 JSON 序列化开销。
+   - (c) **SQL 审计**：参数化后的 SQL 更容易做权限校验（"用户能否执行这类查询？"而不是"用户能否查询 id=1？"）。
+</details>
+
 ## 下一课预告
 
 **第 20 课（完结篇）：综合实战 — 用 Druid 实现 SQL to ES DSL 转换器** — 我们将综合运用前面学到的所有知识，从零实现一个简单的 SQL-to-ES DSL 转换器。这既是课程的总结，也是你实际项目的起点。

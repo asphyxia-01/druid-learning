@@ -218,6 +218,26 @@ public String addTenantFilter(String sql, String tenantId) {
 | PagerUtils.java | `limit()` | 生成分页 SQL |
 | PagerUtils.java | `limit(Oracle)` | Oracle 分页处理 |
 
+## 思考题答案
+
+<details>
+<summary>点击展开</summary>
+
+1. **PagerUtils 的 `count()` 是用字符串拼接还是 AST 操作？**
+   - **AST 操作**。`PagerUtils.count()` 内部先 parse SQL 成 AST，然后替换 SELECT 列表为 `COUNT(*)`，移除 ORDER BY 和 LIMIT，最后通过 OutputVisitor 输出。这种方式比正则替换更可靠，能正确处理子查询、UNION 等复杂场景。
+
+2. **Oracle 的分页为什么需要两层子查询？这个在 AST 层面怎么实现的？**
+   - Oracle 不支持 `LIMIT` 和 `OFFSET`。分页需要：
+     - 内层子查询：`SELECT t.*, ROWNUM AS rn FROM (原查询) t WHERE ROWNUM <= offset + count`
+     - 外层子查询：`SELECT * FROM (内层) WHERE rn > offset`
+   - 在 AST 层面：创建一个新的 `SQLSelectStatement`，把原查询作为 `SQLExprTableSource` 放入子查询的 FROM，在 SELECT 列表添加 `ROWNUM AS rn`，在外层再加 WHERE 过滤 `rn > offset`。
+
+3. **SQL-to-ES DSL 中 LIMIT/OFFSET 到 ES from/size 的映射？**
+   - `SQLSelectQueryBlock.getLimit()` → `SQLLimit.getRowCount()` → ES 的 `"size"` 字段
+   - `SQLLimit.getOffset()`（如果没有 offset，默认为 0）→ ES 的 `"from"` 字段
+   - 示例：`LIMIT 10 OFFSET 20` → `{"from": 20, "size": 10}`
+</details>
+
 ## 下一课预告
 
 **第 19 课：SQL 参数化与模板** — Druid 支持将 SQL 中的字面量替换为参数占位符（`?`），这就是 SQL 参数化。这在 SQL 监控、防火墙、缓存等场景中非常重要。

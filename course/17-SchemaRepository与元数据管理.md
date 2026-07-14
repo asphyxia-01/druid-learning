@@ -275,6 +275,25 @@ public class EsSchemaManager {
 | repository/SchemaResolveVisitor.java | 列类型解析 Visitor |
 | repository/SchemaResolveVisitorFactory.java | 创建方言对应 SchemaResolveVisitor |
 
+## 思考题答案
+
+<details>
+<summary>点击展开</summary>
+
+1. **`console()` 和 `SQLUtils.parseStatements()` 的返回结果有什么不同？**
+   - `console()` 返回的 `SQLStatement` 经过了 **SchemaResolveVisitor** 的处理。AST 中的 `SQLIdentifierExpr` 节点被注入了 resolvedColumn 和 resolvedTableSource 信息。所以 `console()` 返回的 AST 不仅知道"有个标识符叫 id"，还知道"id 是 users 表的 INT 类型列"。
+   - 而 `SQLUtils.parseStatements()` 只做语法解析，不做语义解析。
+
+2. **SchemaResolveVisitor 如何通过别名解析列类型？**
+   - 维护一个 `aliasMap`：遇到 `FROM users u` 时记录 `u → users`；遇到 `JOIN orders o ON ...` 时记录 `o → orders`。
+   - 遍历到 `u.id` 时：找 `u` 的 alias 映射 → `users` 表 → 在 Schema 中找 `users` 表的 `id` 列 → 获取其 SQLDataType → 注入到 `SQLPropertyExpr` 的 resolvedColumn。
+
+3. **要支持 ES 的 nested 类型（对应 SQL JOIN），SchemaRepository 需要怎么扩展？**
+   - 在注册表结构时，允许标记某些列为 nested 类型（如 `"address" NESTED`）。
+   - 扩展 `SchemaResolveVisitor`，当遇到 `JOIN` 时，检查关联的表/列是否标记为 nested，如果是则注入 nested 路径信息。
+   - 在你的 ES DSL Visitor 中，检测到 nested 类型时，输出 ES 的 nested query 格式 `{"nested": {"path": "address", "query": {...}}}`。
+</details>
+
 ## 下一课预告
 
 **第 18 课：PagerUtils 与 SQL 分页** — PagerUtils 是 Druid 提供的一个实用工具，可以自动为 SQL 添加分页逻辑。它的实现原理是在 AST 层面操作 SQL，这也是 Druid SQL 引擎能力的重要体现。

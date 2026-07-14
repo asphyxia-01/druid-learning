@@ -214,6 +214,26 @@ SQLParser 的设计体现了一个**分层抽象**的思路：
 | SQLParser.java:105 | `parseExpr()` | 委托表达式解析 |
 | SQLParserFeature.java | 全篇 | 特性开关定义 |
 
+## 思考题答案
+
+<details>
+<summary>点击展开</summary>
+
+1. **SQLParser 为什么要持有 `exprParser` 的引用？改成每次都创建新的会有什么问题？**
+   - 关键在于 **Lexer 状态的共享**。Parser 和 ExprParser 共享同一个 Lexer 实例，Lexer 的 `pos`（当前位置）在它们之间流转。如果每次 `parseExpr()` 都创建新的 ExprParser，新 ExprParser 会用一个新的 Lexer 从头解析，永远取不到当前 Token。
+   - 另外，`exprParser` 可能被方言子类覆盖（如 `MySqlExprParser`），持有引用确保了多态行为。
+
+2. **`accept(Token)` 和 `identifierEquals(String)` 本质区别？**
+   - `accept(Token)` 用于匹配**关键字**（如 `accept(FROM)`），Token 是枚举常量，比较的是 `lexer.token == Token.FROM`。
+   - `identifierEquals(String)` 用于匹配**标识符**（如 `identifierEquals("ENGINE")`），比较的是 Lexer 当前标识符的哈希值。这在 DDL 解析中很常见，因为 `ENGINE` 不是关键字，只是标识符。
+
+3. **位标记（bit flag）相比 boolean 字段的优势？**
+   - (a) **节省内存**：32 个特性只需 1 个 int（4 字节），32 个 boolean 是 32 字节。
+   - (b) **原子操作**：可以用 `features |= mask`、`features &= ~mask` 一次性开关多个特性。
+   - (c) **传递方便**：一个 int 可以传给方法、存在配置里。32 个 boolean 需要 32 个参数或一个配置对象。
+   - (d) **比较高效**：`(features & mask) != 0` 一次位运算就完成了检查。
+</details>
+
 ## 下一课预告
 
 **第 6 课：SQLExprParser 表达式解析** — 表达式是 SQL 的"细胞"。WHERE 子句中的比较、SELECT 列表中的函数调用、SET 语句中的赋值，全都是表达式。我们将深入 SQLExprParser，看看 Druid 是如何处理这些表达式的。

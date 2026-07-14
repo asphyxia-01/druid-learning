@@ -282,6 +282,22 @@ SQL Select → ES SearchRequest
 | SchemaStatVisitor.java | `visit(SQLBinaryOpExpr)` | 条件提取 |
 | SchemaStatVisitor.java | `getTables/getColumns/getConditions` | 访问收集结果 |
 
+## 思考题答案
+
+<details>
+<summary>点击展开</summary>
+
+1. **SchemaStatVisitor 如何解决列名歧义（`u.id` vs `o.id`）？**
+   - 通过 `SQLPropertyExpr` 的 owner（`u`）来区分。对于 `u.id`，`SQLPropertyExpr.getOwner()` 返回 `u`，`getName()` 返回 `id`。SchemaStatVisitor 内部维护了一个 **别名 → 真实表名** 的映射表（`aliasMap`），`u` 映射到 `users`，所以 `u.id` 最终被解析为 `users.id`。对于没有限定的 `id`，则根据上下文（parent 节点的 from/JOIN 关系）推断。
+
+2. **`conditions` 中是否包含 JOIN ... ON 中的条件？**
+   - 包含。`ON u.id = o.user_id` 也是一个 `SQLBinaryOpExpr(Equality, u.id, o.user_id)`，SchemaStatVisitor 在 `visit(SQLBinaryOpExpr)` 中会像处理 WHERE 条件一样处理它。
+   - 但 JOIN 条件可以被区分为"关联条件"（`relationships`）：`visitor.getRelationships()` 专门收集 JOIN 产生的等值关联。
+
+3. **为 ES DSL 写 SchemaStatVisitor 需要扩展什么？**
+   - 主要扩展点：识别 ES 特有的"查询模式"，如 `match` 函数 → ES match query；`nested` 路径 → ES nested query；`geo_distance` → ES geo query。这些在标准的 SQL SchemaStatVisitor 中不会出现，但在你的 ES DSL 场景中可能需要自定义的"模式提取器"。
+</details>
+
 ## 下一课预告
 
 **第 16 课：SQLBuilder 与编程式 SQL 构建** — 除了从 SQL 字符串解析得到 AST，Druid 还支持通过编程方式直接构建 AST（即 Builder 模式）。这在需要动态构建 SQL 的场景下非常有用。

@@ -226,6 +226,35 @@ String esDsl = builder
 | builder/impl/SQLSelectBuilderImpl.java | SELECT Builder 实现 |
 | builder/SQLBuilderFactory.java | Builder 工厂 |
 
+## 思考题答案
+
+<details>
+<summary>点击展开</summary>
+
+1. **Builder 模式和直接解析 SQL 各有什么适用场景？**
+   - **Builder 模式**：适用于**动态构建**场景，如根据用户传入的参数组合不同的 WHERE 条件、SELECT 列。你可以在运行时决定加不加某个条件。
+   - **直接解析**：适用于**静态分析和转换**场景，如 SQL 审核、SQL 格式化、方言转换——你有一串现成的 SQL，需要读懂它。
+   - 两者不互斥：你可以先用 Builder 构建 SQL，再用 Druid 解析它做进一步分析。
+
+2. **`where()` 方法如何将 `"age > 18"` 转换为 `SQLBinaryOpExpr`？**
+   - `SQLSelectBuilderImpl.where(String conditions)` 内部调用了 `SQLUtils.toSQLExpr(conditions, dbType)`，这个方法和 Parser 中的 `exprParser.expr()` 是同一套逻辑——把字符串解析成表达式 AST。所以 `"age > 18"` 字符串被解析成了 `SQLBinaryOpExpr(> , SQLIdentifierExpr(age), SQLIntegerExpr(18))`。
+
+3. **设计 ES DSL Builder，API 应该是什么样的？**
+   ```java
+   // 可以参考 Druid 的 SQLBuilder 设计
+   EsDslBuilder builder = new EsDslBuilder("users");
+   String dsl = builder
+       .term("status", "active")         // term 精确匹配
+       .range("age", 18, null)            // range gt
+       .range("age", null, 60)            // range lt
+       .match("name", "张三")             // match 全文搜索
+       .sort("id", "desc")                // 排序
+       .size(20)                          // 分页
+       .source("id", "name")              // _source 字段
+       .build();                          // 输出 JSON
+   ```
+</details>
+
 ## 下一课预告
 
 **第 17 课：SchemaRepository 与元数据管理** — SchemaRepository 是 Druid 的"元数据大脑"。它管理了 Schema、表定义、列信息等元数据，可以辅助 SQL 解析过程中的类型推断和语义分析。

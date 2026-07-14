@@ -277,6 +277,30 @@ SQLStatementParser 的设计遵循了 **Template Method** 模式：
 | SQLStatementParser.java | `parseWhere()` | WHERE 解析 |
 | SQLDDLParser.java | `parseCreateTable()` | CREATE TABLE 解析 |
 
+## 思考题答案
+
+<details>
+<summary>点击展开</summary>
+
+1. **`parseStatementList()` 中如何处理空语句和语法错误？**
+   - **空语句（连续分号）**：`;;;` 会被 `if (lexer.token == Token.SEMI) { lexer.nextToken(); continue; }` 跳过，不产生任何 SQLStatement。
+   - **语法错误**：`parseStatement()` 内部如果遇到不符合预期的 Token，会调用 `accept(Token)` 或 `acceptIdentifier(String)`，这些方法在匹配失败时会 `throw new ParserException("syntax error, expect ...")`。调用方可以通过 try-catch 捕获。
+
+2. **`parseInsert()` 中 `VALUES` 和 `SELECT` 分支的处理有什么不同？**
+   - `VALUES (...)` 分支：解析多行值列表，每行是一个 `ValuesClause`，内部是 `List<SQLExpr>`。支持 `VALUES (1, 'a'), (2, 'b')` 批量插入。
+   - `SELECT` 分支：调用 `selectParser.select()` 复用完整的 SELECT 解析逻辑，生成 `SQLSelect` 作为子查询的 AST。
+   - 两者在 AST 层面用不同的属性存储：`VALUES` 存在 `stmt.getValues()` → `ValuesClause`；`SELECT` 存在 `stmt.getQuery()` → `SQLSelect`。
+
+3. **如果要添加 `MERGE INTO` 语句，需要修改哪些文件？**
+   - (a) `Token.java`：确认 MERGE 是否已有 Token（Druid 已经有 `Token.MERGE`）。
+   - (b) `SQLStatementParser.java`：在 `parseStatement()` 的 switch 中加 `case MERGE: return parseMerge();`。
+   - (c) 实现 `parseMerge()` 方法。
+   - (d) `ast/statement/`：如果还没有 `SQLMergeStatement`，需要新建。
+   - (e) `SQLASTVisitor.java`：加 `visit(SQLMergeStatement)` 和 `endVisit(SQLMergeStatement)`。
+   - (f) `SQLASTOutputVisitor.java`：实现 `visit(SQLMergeStatement)` 的输出。
+   - 如果 MySQL/Oracle 的 MERGE 语法不同，还需要在各自的 `StatementParser` 中覆盖。
+</details>
+
 ## 下一课预告
 
 **第 8 课：SQLSelectParser SELECT 解析深度解析** — SELECT 是 SQL 中最复杂的语句，涉及子句多、嵌套层级深。我们将深入 SQLSelectParser，分析它是如何处理 WITH、SELECT 列表、FROM、JOIN、WHERE、GROUP BY、HAVING、ORDER BY、LIMIT 等子句的。

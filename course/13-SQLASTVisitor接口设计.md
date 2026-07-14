@@ -367,6 +367,25 @@ Druid 选择访问者模式而非在 AST 节点上直接添加方法的原因：
 | SQLEvalVisitor.java | 表达式求值 Visitor（参考实现） |
 | ExportParameterVisitor.java | 参数提取 Visitor（参考实现） |
 
+## 思考题答案
+
+<details>
+<summary>点击展开</summary>
+
+1. **`visit()` 返回 `false` 时会发生什么？什么场景下需要返回 `false`？**
+   - 返回 `false` 时，**当前节点的子节点不会被遍历**（剪枝）。
+   - 典型场景：`SQLIdentifierExpr` 没有有意义的子节点，`visit(SQLIdentifierExpr)` 返回 `false` 避免不必要的递归；`SQLExprTableSource` 的表名已经提取完毕，不需要再遍历内部的标识符。剪枝可以提升性能。
+
+2. **访问者模式和 `instanceof` 链相比，优势在哪里？**
+   - **开放封闭原则**：新增操作只需要加一个新的 Visitor 类，不需要改任何 AST 节点。`instanceof` 链需要在每个需要新操作的地方加 if-else 分支。
+   - **编译期检查**：如果 AST 节点新增了类型，Visitor 接口新增了方法，所有未实现的 Visitor 会被编译器标记（Java 8 的 default 方法缓解了这个问题，但仍然是显式的）。
+   - **分派效率**：`node.accept(visitor)` 是**双分派**（double dispatch）——运行时同时确定 node 类型和 visitor 类型。`instanceof` 链是线性的，性能 O(n) vs O(1)。
+
+3. **ES bool 查询的 Visitor 需要处理哪些节点？正确的遍历顺序是什么？**
+   - 关键节点：`SQLBinaryOpExpr`（=→term, >→range, AND→bool.must, OR→bool.should, NOT→bool.must_not）、`SQLInListExpr`（IN→terms）、`SQLLikeExpr`（LIKE→wildcard）、`SQLBetweenExpr`（BETWEEN→range）、`SQLMethodInvokeExpr`（match/match_phrase 等）。
+   - 遍历顺序：先解析叶子条件（term/range），然后逐层组合 AND/OR/NOT 为 bool 查询。`SQLBinaryOpExpr(BooleanAnd)` 应该返回 `true` 继续遍历子节点，让子节点的 visit 分别生成各自的查询片段，然后在父节点组合。
+</details>
+
 ## 下一课预告
 
 **第 14 课：SQLASTOutputVisitor 深入** — 输出访问者是 Druid 中最重要的 Visitor 之一。它负责将 AST 重新转换为格式化的 SQL 字符串。我们将深入它的实现，理解 SQL 格式化的工作原理。

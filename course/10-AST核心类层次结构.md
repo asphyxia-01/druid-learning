@@ -313,6 +313,31 @@ for (SQLObject child : children) {
 | ast/expr/SQLBinaryOpExpr.java | 二元操作符（参考实现） |
 | ast/statement/SQLSelectStatement.java | SELECT 语句（参考实现） |
 
+## 思考题答案
+
+<details>
+<summary>点击展开</summary>
+
+1. **为什么 `accept0()` 的设计是 `protected abstract`？为什么不直接在 `accept()` 中做实现？**
+   - `accept()` 是**模板方法**，它定义了固定的执行顺序：`preVisit → accept0 → postVisit`。如果子类直接覆盖 `accept()`，可能会破坏这个顺序。
+   - `accept0()` 是**抽象方法**，强制每个 AST 节点实现自己的子节点访问逻辑。这种分离确保了 pre/post 处理不被绕过。
+
+2. **`getChildren()` 和 Visitor 模式有什么区别和联系？**
+   - `getChildren()` 是**数据视角**：返回 AST 节点的直接子节点列表，调用方自己决定怎么遍历。
+   - Visitor 是**行为视角**：通过 `visit/endVisit` 回调驱动遍历，调用方通过 `return true/false` 控制遍历。
+   - `getChildren()` 适合简单场景（"给我所有子节点我自己看"），Visitor 适合复杂场景（"在不同的节点类型上做不同的事"）。
+
+3. **你实现 SQL-to-ES DSL 时最需要关注哪些 AST 节点类型？**
+   - `SQLBinaryOpExpr`（WHERE 条件）→ ES term/range/bool 查询
+   - `SQLSelectItem`（SELECT 列表）→ ES _source 字段
+   - `SQLExprTableSource`（FROM 表）→ ES 索引名
+   - `SQLOrderBy`（ORDER BY）→ ES sort
+   - `SQLLimit`（LIMIT）→ ES size
+   - `SQLMethodInvokeExpr`（函数调用）→ ES 脚本或特殊查询
+   - `SQLInListExpr`（IN 条件）→ ES terms 查询
+   - `SQLLikeExpr`（LIKE）→ ES wildcard 查询
+</details>
+
 ## 下一课预告
 
 **第 11 课：表达式节点体系详解** — 我们将深入 Druid 的 72 种表达式节点，系统学习各类表达式在 AST 中的表示方式，包括字面量、标识符、运算、函数调用、CASE WHEN 等。
