@@ -1,0 +1,20 @@
+# 忽略 druid 源码（只关注课件）
+druid/
+
+# Python 虚拟环境
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
